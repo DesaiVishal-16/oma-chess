@@ -1,0 +1,22 @@
+{
+  "_about": "Chess.com & Lichess stats panel. UI entry: BarWidget.qml (loads Panel.qml). Data: ChessService.qml. Parsers: lib/*.js. Docs: README.md",
+  "schemaVersion": 1,
+  "id": "oma.chess",
+  "name": "OMA-CHESS",
+  "version": "0.1.0",
+  "author": "Vishal Desai",
+  "license": "MIT",
+  "description": "Chess.com & Lichess stats panel for the Omarchy bar",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "OMA-CHESS",
+    "description": "Chess.com & Lichess stats panel",
+    "category": "Info",
+    "allowMultiple": false
+  }
+}

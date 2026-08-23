@@ -7,7 +7,7 @@ one-click matchmaking and quick links back to your games.
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/<you>/oma-chess.git --enable
+omarchy plugin add https://github.com/DesaiVishal-16/oma-chess.git --enable
 ```
 
 The ♞ icon appears in the bar (category: Info). Reposition it with:

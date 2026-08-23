@@ -68,6 +68,35 @@ Item {
   readonly property string cacheDir: Quickshell.env("HOME") + "/.cache/omarchy-chess"
   readonly property string userAgent: "oma-chess-plugin/0.1 (omarchy quickshell plugin)"
 
+  /*
+   SECURITY: HTTP bodies are untrusted input into a long-lived shell, so
+   every response is bounded twice. Transport-side, curl output is piped
+   through `head -c` so no StdioCollector can ever accumulate unbounded
+   bytes. Defensively, every collector re-checks the size before JSON/
+   NDJSON parsing, and cache writes are capped too. The archive endpoints
+   are the largest legitimate bodies; 4 MiB is far above anything a real
+   month produces for these display needs.
+  */
+  readonly property int maxResponseBytes: 4 * 1024 * 1024
+  readonly property int maxCacheBytes: 1 * 1024 * 1024
+
+  function shellQuote(s) {
+    return "'" + String(s).replace(/'/g, "'\\''") + "'"
+  }
+
+  /* curl wrapped in bash with a hard byte ceiling via head -c. */
+  function httpCmd(maxTimeSecs, url, acceptHeader) {
+    var script = "exec curl -fsS --max-time " + Number(maxTimeSecs) +
+      " -A " + root.shellQuote(root.userAgent)
+    if (acceptHeader) script += " -H " + root.shellQuote("Accept: " + acceptHeader)
+    script += " " + root.shellQuote(url) + " | head -c " + root.maxResponseBytes
+    return ["bash", "-c", script]
+  }
+
+  function overLimit(raw) {
+    return raw.length > root.maxResponseBytes
+  }
+
   Timer {
     id: livePollTimer
     interval: 30000
@@ -79,12 +108,7 @@ Item {
   function pollCurrentGame() {
     var user = root.lichessUser.trim()
     if (user === "") return
-    liLiveProc.command = [
-      "curl", "-fsS", "--max-time", "8",
-      "-A", root.userAgent,
-      "-H", "Accept: application/x-ndjson",
-      LichessApi.currentGameUrl(user)
-    ]
+    liLiveProc.command = root.httpCmd(8, LichessApi.currentGameUrl(user), "application/x-ndjson")
     liLiveProc.running = true
   }
 
@@ -92,7 +116,11 @@ Item {
     id: liLiveProc
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.lichessCurrentGame = LichessApi.parseCurrentGame(String(text || ""))
+      onStreamFinished: {
+        var raw = String(text || "")
+        if (root.overLimit(raw)) { root.lichessCurrentGame = null; return }
+        root.lichessCurrentGame = LichessApi.parseCurrentGame(raw)
+      }
     }
     onExited: function(code) { if (code !== 0) root.lichessCurrentGame = null }
   }
@@ -180,10 +208,7 @@ Item {
     root._ccArchiveQueue = ChessComLib.recentArchives(Date.now())
     root._ccStatsDone = false
 
-    chessComStatsProc.command = [
-      "curl", "-fsS", "--max-time", "8", "-A", root.userAgent,
-      ChessComLib.statsUrl(user)
-    ]
+    chessComStatsProc.command = root.httpCmd(8, ChessComLib.statsUrl(user))
     chessComStatsProc.running = true
     /*
      Archives chain after stats completes; chess.com also asks for
@@ -204,20 +229,15 @@ Item {
     }
     var next = root._ccArchiveQueue.shift()
     root._ccGamesHandled = false
-    chessComGamesProc.command = [
-      "curl", "-fsS", "--max-time", "12", "-A", root.userAgent,
-      ChessComLib.archiveUrl(root._ccPartial.user, next.year, next.month)
-    ]
+    chessComGamesProc.command = root.httpCmd(12,
+      ChessComLib.archiveUrl(root._ccPartial.user, next.year, next.month))
     chessComGamesProc.running = true
   }
 
   function startCcProfile() {
     if (!root._ccPartial) return
     beginCcStage("profile")
-    ccProfileProc.command = [
-      "curl", "-fsS", "--max-time", "8", "-A", root.userAgent,
-      ChessComLib.profileUrl(root._ccPartial.user)
-    ]
+    ccProfileProc.command = root.httpCmd(8, ChessComLib.profileUrl(root._ccPartial.user))
     ccProfileProc.running = true
   }
 
@@ -275,7 +295,8 @@ Item {
         var raw = String(text || "").trim()
         if (!root._ccPartial || root._ccStatsDone) return
         root._ccStatsDone = true
-        if (raw) {
+        /* Oversized body: refuse to parse it (transport cap is the real guard). */
+        if (!root.overLimit(raw) && raw) {
           try {
             root._ccPartial.ratings = ChessComLib.parseStats(JSON.parse(raw))
           } catch (e) {
@@ -302,7 +323,7 @@ Item {
         if (!root._ccPartial || root._ccGamesHandled) return
         root._ccGamesHandled = true
         var raw = String(text || "").trim()
-        if (raw) {
+        if (!root.overLimit(raw) && raw) {
           try {
             /* Archive body shape: {"games":[ ... ]} */
             var body = JSON.parse(raw)
@@ -336,7 +357,7 @@ Item {
         if (!root._ccPartial || root._ccProcHandled) return
         root._ccProcHandled = true
         var raw = String(text || "").trim()
-        if (raw) {
+        if (!root.overLimit(raw) && raw) {
           try {
             root._ccPartial.profile = ChessComLib.parseProfile(JSON.parse(raw))
           } catch (e) {
@@ -374,12 +395,7 @@ Item {
      profile -> games -> current-game -> tournaments (only when stale).
     */
     beginLiStage("profile")
-    lichessProfileProc.command = [
-      "curl", "-fsS", "--max-time", "8",
-      "-A", root.userAgent,
-      "-H", "Accept: application/json",
-      LichessApi.userUrl(user)
-    ]
+    lichessProfileProc.command = root.httpCmd(8, LichessApi.userUrl(user), "application/json")
     lichessProfileProc.running = true
   }
 
@@ -410,34 +426,22 @@ Item {
   function startLichessGames() {
     if (!root._liPartial) return
     beginLiStage("games")
-    lichessGamesProc.command = [
-      "curl", "-fsS", "--max-time", "8",
-      "-A", root.userAgent,
-      "-H", "Accept: application/x-ndjson",
-      LichessApi.gamesUrl(root._liPartial.user, 10)
-    ]
+    lichessGamesProc.command = root.httpCmd(8,
+      LichessApi.gamesUrl(root._liPartial.user, 10), "application/x-ndjson")
     lichessGamesProc.running = true
   }
 
   function startLichessCurrent() {
     if (!root._liPartial) return
     beginLiStage("current")
-    lichessCurrentProc.command = [
-      "curl", "-fsS", "--max-time", "8",
-      "-A", root.userAgent,
-      "-H", "Accept: application/x-ndjson",
-      LichessApi.currentGameUrl(root._liPartial.user)
-    ]
+    lichessCurrentProc.command = root.httpCmd(8,
+      LichessApi.currentGameUrl(root._liPartial.user), "application/x-ndjson")
     lichessCurrentProc.running = true
   }
 
   function startLichessTournaments() {
     beginLiStage("tournaments")
-    lichessTourneysProc.command = [
-      "curl", "-fsS", "--max-time", "10",
-      "-A", root.userAgent,
-      LichessApi.tournamentsUrl()
-    ]
+    lichessTourneysProc.command = root.httpCmd(10, LichessApi.tournamentsUrl())
     lichessTourneysProc.running = true
   }
 
@@ -485,7 +489,8 @@ Item {
         if (!root._liPartial || root._liProcHandled) return
         root._liProcHandled = true
         var raw = String(text || "").trim()
-        if (raw) {
+        /* Oversized body: refuse to parse it (transport cap is the real guard). */
+        if (!root.overLimit(raw) && raw) {
           try {
             root._liPartial.profile = LichessApi.parseProfile(JSON.parse(raw))
           } catch (e) {
@@ -516,7 +521,9 @@ Item {
         var raw = String(text || "").trim()
         /* curl -f gives us an empty body on HTTP errors (404/429). */
         if (!raw) root.lichessError = "games unavailable"
-        root._liPartial.games = LichessApi.parseGamesNdjson(raw, root._liPartial.user, 10)
+        root._liPartial.games = root.overLimit(raw)
+          ? []
+          : LichessApi.parseGamesNdjson(raw, root._liPartial.user, 10)
         root.liAdvance()
       }
     }
@@ -536,7 +543,11 @@ Item {
       onStreamFinished: {
         if (!root._liPartial || root._liProcHandled) return
         root._liProcHandled = true
-        root.lichessCurrentGame = LichessApi.parseCurrentGame(String(text || ""))
+        var raw = String(text || "")
+        if (root.overLimit(raw)) {
+          raw = ""
+        }
+        root.lichessCurrentGame = LichessApi.parseCurrentGame(raw)
         root.liAdvance()
       }
     }
@@ -557,7 +568,7 @@ Item {
         if (!root._liPartial || root._liProcHandled) return
         root._liProcHandled = true
         var raw = String(text || "").trim()
-        if (raw) {
+        if (!root.overLimit(raw) && raw) {
           try {
             root.lichessTournaments = LichessApi.parseUpcomingTournaments(JSON.parse(raw), Date.now(), 48 * 3600 * 1000)
             root.liTournamentsFetchedAt = new Date()
@@ -580,7 +591,10 @@ Item {
 
   function writeCache(file, payload) {
     try {
-      file.setText(JSON.stringify(payload))
+      var serialized = JSON.stringify(payload)
+      /* Payloads are built from capped parses, so this is defense in depth. */
+      if (!serialized || serialized.length > root.maxCacheBytes) return
+      file.setText(serialized)
     } catch (e) {
       /* Cache write failure is never fatal. */
     }

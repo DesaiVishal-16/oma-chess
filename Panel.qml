@@ -937,6 +937,7 @@ text: "✓"
         Text {
           visible: root.activeAccounts.length === 1 && !root.editingUsers
           text: root.activeAccounts.length === 1 ? root.activeAccounts[0].label + " · @" + root.currentUser : ""
+          textFormat: Text.PlainText
           color: Qt.darker(root.contentForeground, 1.5)
           font.family: root.contentFontFamily
           font.pixelSize: Style.font.caption
@@ -989,6 +990,7 @@ text: "✓"
                 width: parent.width
                 elide: Text.ElideRight
                 text: root.ccProfile() ? (root.ccProfile().name !== "" ? root.ccProfile().name : "@" + root.currentUser) : ""
+                textFormat: Text.PlainText
                 color: root.contentForeground
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
@@ -1012,6 +1014,7 @@ text: "✓"
                   anchors.verticalCenter: parent.verticalCenter
                   elide: Text.ElideRight
                   text: root.ccProfile() && root.ccProfile().lastOnline > 0 ? "· seen " + root.timeAgo(root.ccProfile().lastOnline) : ""
+                  textFormat: Text.PlainText
                   color: Qt.darker(root.contentForeground, 1.9)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.caption
@@ -1054,6 +1057,7 @@ text: "✓"
                 Text {
                   visible: modelData.record !== ""
                   text: modelData.record
+                  textFormat: Text.PlainText
                   color: Qt.darker(root.contentForeground, 1.7)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.caption
@@ -1150,6 +1154,7 @@ text: "✓"
                 width: parent.width
                 elide: Text.ElideRight
                 text: (root.lichessProfile() && root.lichessProfile().title ? root.lichessProfile().title + " " : "") + (root.lichessProfile() ? root.lichessProfile().name : "")
+                textFormat: Text.PlainText
                 color: root.contentForeground
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.body
@@ -1174,6 +1179,7 @@ text: "✓"
                         ? "Online"
                         : "Seen " + root.timeAgo(root.lichessProfile().seenAt))
                     : ""
+                  textFormat: Text.PlainText
                   color: Qt.darker(root.contentForeground, 1.5)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.caption
@@ -1310,6 +1316,7 @@ text: "✓"
           visible: !root.editingUsers && root.currentSite !== "" && root.statusText !== ""
           width: parent.width
           text: root.statusText
+          textFormat: Text.PlainText
           color: root.statusText.indexOf("Offline") === 0 || root.statusText.indexOf("unavailable") !== -1
             ? "#f85149"
             : Qt.darker(root.contentForeground, 1.5)
@@ -1378,6 +1385,7 @@ text: "✓"
                   width: parent.width
                   elide: Text.ElideRight
                   text: modelData.opponent + (modelData.opponentRating ? " (" + modelData.opponentRating + ")" : "")
+                  textFormat: Text.PlainText
                   color: gameRowMouse.containsMouse ? Color.accent : root.contentForeground
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -1387,6 +1395,7 @@ text: "✓"
                   width: parent.width
                   elide: Text.ElideRight
                   text: modelData.timeControl + (modelData.endedAt ? " · " + root.timeAgo(modelData.endedAt) : "")
+                  textFormat: Text.PlainText
                   color: Qt.darker(root.contentForeground, 1.5)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.caption
@@ -1635,6 +1644,7 @@ text: "✓"
                     width: parent.width
                     elide: Text.ElideRight
                     text: modelData.name
+                    textFormat: Text.PlainText
                     color: tRowMouse.containsMouse ? Color.accent : root.contentForeground
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.bodySmall
@@ -1656,6 +1666,7 @@ text: "✓"
                       parts.push(modelData.nbPlayers + " players")
                       return parts.join(" · ")
                     }
+                    textFormat: Text.PlainText
                     color: Qt.darker(root.contentForeground, 1.5)
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.caption

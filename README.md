@@ -103,7 +103,6 @@ rm -rf ~/.cache/omarchy-chess
 - All links opened from the panel are validated against an allow-list of
   chess.com / lichess hosts before launching
 - Read-only public APIs only — no tokens or credentials are stored
-- Known quirk: **chess.com's game archive lags behind live play by up to ~1
-  hour** (ratings update instantly, but newly finished games appear in the
-  recent-games list only after their archive publishes them). Lichess games
-  show up near-instantly
+- Known quirk: **chess.com's game archive can lag behind live play** (ratings
+  update instantly, but newly finished games appear in the recent-games list
+  only after their archive publishes them). Lichess games show up near-instantly

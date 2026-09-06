@@ -66,7 +66,7 @@ Item {
   property string lichessError: ""
 
   readonly property string cacheDir: Quickshell.env("HOME") + "/.cache/omarchy-chess"
-  readonly property string userAgent: "oma-chess-plugin/0.1 (omarchy quickshell plugin)"
+  readonly property string userAgent: "oma-chess-plugin/0.2.0 (omarchy quickshell plugin)"
 
   /*
    SECURITY: HTTP bodies are untrusted input into a long-lived shell, so
@@ -129,6 +129,7 @@ Item {
     ensureDirsProc.running = true
     ccCacheFile.reload()
     liCacheFile.reload()
+    liPerfCacheFile.reload()
   }
 
   onChessComUserChanged: {
@@ -141,6 +142,7 @@ Item {
   onLichessUserChanged: {
     root.lichessData = null
     root.lichessError = ""
+    root.lichessPerfStats = ({})
     liCacheFile.reload()
     Qt.callLater(function() { if (root.panelVisible) refreshLichess() })
   }
@@ -381,6 +383,58 @@ Item {
   property bool _liProfileDone: false
   property bool _liGamesDone: false
 
+  /*
+   Lazy per-format W/L/D (lifetime). Not part of the critical refresh path:
+   after the main chain finishes, these are fetched one perf at a time, but
+   only when the panel is visible AND the stats are stale (long TTL — see
+   perfStatsRefreshMs) so we never hammer /perf/{perf} on every refresh.
+   Keys are perf names (bullet/blitz/rapid/classical); each value is
+   { wins, losses, draws, all, fetchedAt }.
+  */
+  property var lichessPerfStats: ({})
+  property var _liPerfQueue: []
+  readonly property int perfStatsRefreshMs: 30 * 60 * 1000
+
+  function isPerfStatsStale(perf) {
+    var s = root.lichessPerfStats[perf]
+    return !s || !s.fetchedAt || (Date.now() - s.fetchedAt) > root.perfStatsRefreshMs
+  }
+
+  /*
+   Start the serialized perf-stats sub-chain for the formats with a rating.
+   Called from finishLichess() once the critical chain is done, and on user
+   change. No-ops when nothing needs fetching.
+  */
+  function fetchPerfStatsLazy() {
+    if (!root.panelVisible) return
+    var user = root.lichessUser.trim().toLowerCase()
+    if (user === "") return
+    var profile = root.lichessData && root.lichessData.profile
+    if (!profile || !profile.ratings) return
+    var wanted = []
+    var perfs = ["bullet", "blitz", "rapid", "classical"]
+    for (var i = 0; i < perfs.length; i++) {
+      var p = profile.ratings[perfs[i]]
+      if (p && root.isPerfStatsStale(perfs[i])) wanted.push(perfs[i])
+    }
+    if (wanted.length === 0) return
+    /* Never restart the chain mid-flight. */
+    if (lichessPerfProc.running) return
+    root._liPerfQueue = wanted
+    startNextLiPerf()
+  }
+
+  function startNextLiPerf() {
+    if (root._liPerfQueue.length === 0) return
+    var user = root.lichessUser.trim().toLowerCase()
+    if (user === "") return
+    var perf = root._liPerfQueue.shift()
+    root._liPerfCurrent = perf
+    root._liPerfProcHandled = false
+    lichessPerfProc.command = root.httpCmd(8, LichessApi.perfStatsUrl(user, perf), "application/json")
+    lichessPerfProc.running = true
+  }
+
   function refreshLichess() {
     if (Date.now() < root.liBackoffUntil.getTime()) return
     var user = root.lichessUser.trim()
@@ -479,6 +533,8 @@ Item {
       root.liBackoffUntil = new Date(Date.now() + root.backoffMs)
     }
     writeCache(liCacheFile, payload)
+    /* Lazy bonus: pull lifetime W/L/D per format once the main chain is done. */
+    root.fetchPerfStatsLazy()
   }
 
   Process {
@@ -587,6 +643,49 @@ Item {
     }
   }
 
+  property bool _liPerfProcHandled: false
+  property string _liPerfCurrent: ""
+
+  Process {
+    id: lichessPerfProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        if (root._liPerfProcHandled) return
+        root._liPerfProcHandled = true
+        var perf = root._liPerfCurrent
+        var raw = String(text || "").trim()
+        if (perf !== "" && !root.overLimit(raw) && raw) {
+          try {
+            var stats = LichessApi.parsePerfStats(JSON.parse(raw))
+            if (stats) {
+              stats.fetchedAt = Date.now()
+              /* Apply only when the username hasn't changed mid-flight. */
+              var user = root.lichessUser.trim().toLowerCase()
+              if (user !== "") {
+                var next = {}
+                var prev = root.lichessPerfStats || {}
+                for (var k in prev) next[k] = prev[k]
+                next[perf] = stats
+                root.lichessPerfStats = next
+                root.writePerfCache()
+              }
+            }
+          } catch (e) {
+            /* Corrupt/failed body: leave the format unset (retried next round). */
+          }
+        }
+        root.startNextLiPerf()
+      }
+    }
+    onExited: function(code) {
+      if (!root._liPerfProcHandled && code !== 0) {
+        root._liPerfProcHandled = true
+        root.startNextLiPerf()
+      }
+    }
+  }
+
   /* ---- disk cache ----------------------------------------------------- */
 
   function writeCache(file, payload) {
@@ -595,6 +694,19 @@ Item {
       /* Payloads are built from capped parses, so this is defense in depth. */
       if (!serialized || serialized.length > root.maxCacheBytes) return
       file.setText(serialized)
+    } catch (e) {
+      /* Cache write failure is never fatal. */
+    }
+  }
+
+  function writePerfCache() {
+    var user = root.lichessUser.trim().toLowerCase()
+    if (user === "") return
+    var payload = { user: user, fetchedAt: Date.now(), stats: root.lichessPerfStats }
+    try {
+      var serialized = JSON.stringify(payload)
+      if (!serialized || serialized.length > root.maxCacheBytes) return
+      liPerfCacheFile.setText(serialized)
     } catch (e) {
       /* Cache write failure is never fatal. */
     }
@@ -642,6 +754,27 @@ Item {
     onLoaded: {
       var cached = root.cachedPayload(text(), root.lichessUser)
       if (cached && !root.lichessData) root.lichessData = cached
+    }
+    onLoadFailed: { /* no cache yet */ }
+  }
+
+  FileView {
+    id: liPerfCacheFile
+    path: root.cacheDir + "/lichess-perf.json"
+    atomicWrites: true
+    printErrors: false
+    watchChanges: false
+    onLoaded: {
+      var raw = String(text() || "").trim()
+      if (!raw) return
+      try {
+        var cached = JSON.parse(raw)
+        if (!cached || !cached.user || !cached.stats) return
+        if (cached.user.toLowerCase() !== root.lichessUser.trim().toLowerCase()) return
+        root.lichessPerfStats = cached.stats
+      } catch (e) {
+        /* Corrupt cache: ignore it, stats refetch lazily. */
+      }
     }
     onLoadFailed: { /* no cache yet */ }
   }

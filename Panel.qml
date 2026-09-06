@@ -198,9 +198,16 @@ Panel {
     if (!prof || !prof.ratings) return []
     var defs = [["bullet", "Bullet"], ["blitz", "Blitz"], ["rapid", "Rapid"], ["classical", "Classical"], ["puzzle", "Puzzles"]]
     var out = []
+    var stats = service.lichessPerfStats || {}
     for (var i = 0; i < defs.length; i++) {
-      var p = prof.ratings[defs[i][0]]
-      if (p) out.push({ label: defs[i][1], rating: p.rating, prog: p.prog, prov: p.prov })
+      var key = defs[i][0]
+      var p = prof.ratings[key]
+      if (!p) continue
+      var s = stats[key]
+      var record = ""
+      if (s && (s.wins + s.losses + s.draws) > 0)
+        record = "W " + s.wins + " · L " + s.losses + " · D " + s.draws
+      out.push({ label: defs[i][1], rating: p.rating, prog: p.prog, prov: p.prov, record: record })
     }
     return out.filter(function(c) { return !root.isCatHidden("lichess", c.label) })
   }
@@ -769,26 +776,20 @@ Panel {
                 }
 
                 /* X — clear/remove */
-                Rectangle {
+                Text {
                   id: removeButton
                   anchors.right: parent.right
                   anchors.verticalCenter: parent.verticalCenter
-                  width: Style.space(26)
-                  height: Style.space(22)
-                  radius: Style.cornerRadius
-                  color: removeHover.containsMouse ? "#f85149" : "transparent"
-
-                  Text {
-                    anchors.centerIn: parent
 text: "✕"
-                    color: removeHover.containsMouse ? Color.background : root.contentForeground
-                    font.family: root.contentFontFamily
-                    font.pixelSize: Style.font.bodySmall
-                  }
+                  color: removeHover.containsMouse ? "#f85149" : root.contentForeground
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.body
+                  font.bold: true
 
                   MouseArea {
                     id: removeHover
                     anchors.fill: parent
+                    anchors.margins: -Style.space(6)
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: usernameField.text = ""
@@ -802,28 +803,21 @@ text: "✕"
                 }
 
                 /* OK — save */
-                Rectangle {
+                Text {
                   id: okButton
                   anchors.right: removeButton.left
-                  anchors.rightMargin: Style.space(4)
+                  anchors.rightMargin: Style.space(18)
                   anchors.verticalCenter: parent.verticalCenter
-                  width: Style.space(40)
-                  height: Style.space(22)
-                  radius: Style.cornerRadius
-                  color: okHover.containsMouse ? "#3fb950" : "transparent"
-
-                  Text {
-                    anchors.centerIn: parent
 text: "✓"
-                    color: okHover.containsMouse ? Color.background : root.contentForeground
-                    font.family: root.contentFontFamily
-                    font.pixelSize: Style.font.bodySmall
-                    font.bold: true
-                  }
+                  color: okHover.containsMouse ? "#3fb950" : root.contentForeground
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.body
+                  font.bold: true
 
                   MouseArea {
                     id: okHover
                     anchors.fill: parent
+                    anchors.margins: -Style.space(6)
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.commitUsers()
@@ -1205,15 +1199,28 @@ text: "✓"
               radius: Style.cornerRadius
               color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.05)
 
-              Text {
+              Column {
                 anchors.left: parent.left
                 anchors.leftMargin: Style.space(10)
                 anchors.verticalCenter: parent.verticalCenter
-                text: modelData.label.toUpperCase() + (modelData.prov ? " ?" : "")
-                color: Qt.darker(root.contentForeground, 1.5)
-                font.family: root.contentFontFamily
-                font.pixelSize: Style.font.caption
-                font.letterSpacing: 1
+                spacing: 1
+
+                Text {
+                  text: modelData.label.toUpperCase() + (modelData.prov ? " ?" : "")
+                  color: Qt.darker(root.contentForeground, 1.5)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                  font.letterSpacing: 1
+                }
+
+                Text {
+                  visible: modelData.record !== ""
+                  text: modelData.record
+                  textFormat: Text.PlainText
+                  color: Qt.darker(root.contentForeground, 1.7)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                }
               }
 
               HoverHandler { id: liRowHover }

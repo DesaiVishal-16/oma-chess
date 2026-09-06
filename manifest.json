@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "oma.chess",
   "name": "OMA-CHESS",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Vishal Desai",
   "license": "MIT",
   "description": "Chess.com & Lichess stats panel for the Omarchy bar",

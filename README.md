@@ -4,6 +4,8 @@ A Chess.com & Lichess stats panel for the Omarchy bar. A ♞ pill that opens a
 popup with your live ratings, recent games, and upcoming tournaments — plus
 one-click matchmaking and quick links back to your games.
 
+![OMA-CHESS preview](preview.png)
+
 ## Install
 
 ```sh

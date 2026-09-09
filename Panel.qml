@@ -370,17 +370,17 @@ Panel {
     root.controller.show()
     Qt.callLater(function() {
       if (root.opened) {
-        setCenterHoverRevealSuppressed(true)
+        try { setCenterHoverRevealSuppressed(true) } catch (e) {}
         service.refreshIfStale()
       }
     })
   }
 
   function close() {
-    setCenterHoverRevealSuppressed(false)
+    root.controller.hide()
+    try { setCenterHoverRevealSuppressed(false) } catch (e) {}
     if (root.editingUsers) root.cancelEditingUsers()
     root.subView = ""
-    root.controller.hide()
   }
 
   function toggle() {
@@ -395,7 +395,9 @@ Panel {
   }
 
   function setCenterHoverRevealSuppressed(value) {
-    if (root.bar && "centerHoverRevealSuppressed" in root.bar)
+    if (root.bar && typeof root.bar.setCenterHoverRevealSuppressed === "function")
+      root.bar.setCenterHoverRevealSuppressed(value)
+    else if (root.bar && "centerHoverRevealSuppressed" in root.bar)
       root.bar.centerHoverRevealSuppressed = value
   }
 

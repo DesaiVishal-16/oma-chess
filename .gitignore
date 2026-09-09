@@ -9,7 +9,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
-.vscode/
 .idea/
 *.log
 
@@ -18,3 +17,5 @@ Thumbs.db
 __pycache__/
 
 # Keep plugin intact - do not ignore LICENSE, README, manifest, QML, lib/
+config.bat
+node_modules

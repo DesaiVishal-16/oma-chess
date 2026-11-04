@@ -233,6 +233,7 @@ Panel {
   Component.onCompleted: detectChessApps()
 
   function detectChessApps() {
+    if (appDetectProc.running) return
     appDetectProc.running = true
   }
 
@@ -330,6 +331,35 @@ Panel {
     root.close()
   }
 
+  /*
+   A desktop id detected earlier can disappear while the shell is running
+   (e.g. the user uninstalls a web app). gtk-launch then exits non-zero and
+   the click silently does nothing, so wait for the result and fall back to
+   opening the URL in the default browser.
+  */
+  Process {
+    id: appLaunchProc
+    property string fallbackUrl: ""
+
+    onExited: function(exitCode) {
+      var url = appLaunchProc.fallbackUrl
+      appLaunchProc.fallbackUrl = ""
+      if (exitCode !== 0 && url !== "") {
+        root.lastLaunch = new Date(0)
+        root.launch(url)
+      }
+    }
+  }
+
+  function launchDesktopApp(appId, fallbackUrl) {
+    if (Date.now() - root.lastLaunch.getTime() < 1500) return
+    root.lastLaunch = new Date()
+    appLaunchProc.fallbackUrl = fallbackUrl
+    appLaunchProc.command = ["gtk-launch", appId]
+    appLaunchProc.running = true
+    root.close()
+  }
+
   function openGameUrl(site, url) {
     if (site === "lichess") return root.openLichessUrl(url)
     if (root.ccDesktopId !== "" && root.ccAppTakesUrl)
@@ -350,10 +380,11 @@ Panel {
   */
   function findOpponent() {
     var appId = root.appIdForCurrentSite()
-    if (appId !== "") return root.launch2(["gtk-launch", appId])
-    if (root.currentSite === "chesscom") return root.launch("https://www.chess.com/play/online")
-    if (root.currentSite === "lichess") return root.launch("https://lichess.org")
-    root.launch("https://www.chess.com")
+    var url = root.currentSite === "chesscom" ? "https://www.chess.com/play/online"
+            : root.currentSite === "lichess" ? "https://lichess.org"
+            : "https://www.chess.com"
+    if (appId !== "") return root.launchDesktopApp(appId, url)
+    root.launch(url)
   }
 
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
@@ -368,6 +399,8 @@ Panel {
 
   function open() {
     root.controller.show()
+    /* Apps may have been installed or removed since the shell started. */
+    root.detectChessApps()
     Qt.callLater(function() {
       if (root.opened) {
         try { setCenterHoverRevealSuppressed(true) } catch (e) {}
